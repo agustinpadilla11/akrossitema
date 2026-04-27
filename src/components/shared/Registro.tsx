@@ -32,7 +32,11 @@ export default function Registro() {
       });
       navigate(isAdmin ? '/admin' : '/portal');
     } catch (err: any) {
-      setError('Error al registrar: ' + err.message);
+      if (err.code === 'auth/network-request-failed' || err.message.includes('network')) {
+        setError('Error de red. Como estás dentro de AI Studio (iframe), el navegador puede bloquear el acceso a la base de datos. Por favor, ABRÍ LA APP EN UNA NUEVA PESTAÑA (ícono de flecha arriba a la derecha).');
+      } else {
+        setError('Error al registrar: ' + err.message);
+      }
     } finally {
       setLoading(false);
     }

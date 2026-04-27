@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, serverTimestamp, getDoc, limit } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
@@ -52,7 +52,7 @@ export default function PortalPadre() {
     setLinkSuccess('');
     
     try {
-      const q = query(collection(db, 'alumnas'), where('dni', '==', dniABuscar));
+      const q = query(collection(db, 'alumnas'), where('dni', '==', dniABuscar), limit(1));
       const snap = await getDocs(q);
       
       if (snap.empty) {
@@ -129,11 +129,15 @@ export default function PortalPadre() {
             <Link key={alumna.id} to={`/portal/alumna/${alumna.id}`} className="block">
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors">
                 <div className="flex items-center gap-4">
-                  <div className="bg-purple-100 w-12 h-12 rounded flex items-center justify-center shrink-0">
-                    <span className="text-purple-700 font-black text-lg">
-                      {alumna.nombre_completo.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
+                  {alumna.foto_gimnasta_url ? (
+                    <img src={alumna.foto_gimnasta_url} alt={alumna.nombre_completo} className="w-12 h-12 rounded object-cover shrink-0 border-2 border-purple-100" />
+                  ) : (
+                    <div className="bg-purple-100 w-12 h-12 rounded flex items-center justify-center shrink-0">
+                      <span className="text-purple-700 font-black text-lg">
+                        {alumna.nombre_completo.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <h3 className="text-sm font-bold uppercase tracking-tight">{alumna.nombre_completo}</h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase">DNI: {alumna.dni}</p>

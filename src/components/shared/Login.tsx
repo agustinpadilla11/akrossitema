@@ -27,8 +27,8 @@ export default function Login() {
       await signInWithEmailAndPassword(auth, email, password);
       // navigation handled by AuthProvider state change
     } catch (err: any) {
-      if (err.code === 'auth/network-request-failed') {
-        setError('Error de red. Si estás usando un bloqueador de anuncios (como uBlock o Brave Shields), intenta desactivarlo para esta página. Firebase necesita conectarse a sus servidores.');
+      if (err.code === 'auth/network-request-failed' || err.message.includes('network')) {
+        setError('Error de red. Como estás dentro de AI Studio (iframe), el navegador puede bloquear el acceso a la base de datos. Por favor, ABRÍ LA APP EN UNA NUEVA PESTAÑA (ícono de flecha arriba a la derecha) o desactiva "Bloquear cookies de terceros".');
       } else {
         setError('Credenciales inválidas o error de red. ' + err.message);
       }
@@ -71,8 +71,12 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-800">Akros</h2>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <img src="/logo.png" alt="Akros Logo" className="h-20 object-contain mb-2 fallback-text" onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+            document.getElementById('fallback-logo-text')?.classList.remove('hidden');
+          }} />
+          <h2 id="fallback-logo-text" className="text-2xl font-black uppercase tracking-tight text-slate-800 hidden">Akros</h2>
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest mt-2">Ingresá a tu cuenta</p>
         </div>
         

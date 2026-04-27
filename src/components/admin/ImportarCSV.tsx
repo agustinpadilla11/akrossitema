@@ -73,14 +73,15 @@ export default function ImportarCSV() {
         };
 
         // Case-insensitive mapping avoiding partial matches with other columns
-        const nombreKey = findKey(['NOMBRE DE LA GIMNAS', 'APELLIDO Y NOMBRE'], ['PADRE', 'MADRE']);
+        const nombreKey = findKey(['NOMBRE DE LA GIMNAS', 'APELLIDO Y NOMBRE', 'GIMNASTA'], ['PADRE', 'MADRE', 'DNI', 'FOTO', 'FECHA', 'CONDICION']);
         const dniKey = findKey(['DNI DE LA GIMNAS', 'D.N.I', 'DNI'], ['FRENTE', 'DORSO', 'PADRE', 'MADRE']);
-        const fechaKey = findKey(['FECHA DE NAC']);
+        const fechaKey = findKey(['FECHA DE NAC', 'FECHA NAC', 'FECHA']);
         const padreKey = findKey(['NOMBRE DEL PADR', 'APELLIDO DEL PADR']);
         const madreKey = findKey(['NOMBRE DE LA MADR', 'APELLIDO DE LA MADR']);
         const domKey = findKey(['DOMICILIO', 'DIRECCION']);
         const celKey = findKey(['CELULAR', 'TELEFONO', 'CEL']);
         const sangreKey = findKey(['SANGU', 'SANGRE']);
+        const condicionKey = findKey(['CONDICION', 'CONDICI']);
         
         // Documents / Links
         const dniFrenteKey = findKey(['DNI FRENTE', 'DNI - FRENTE']);
@@ -93,7 +94,7 @@ export default function ImportarCSV() {
         const dni = dniKey ? String(row[dniKey]).trim() : '';
         
         if (!nombre_completo) {
-          errors.push(`Fila ${i + 2}: No se pudo encontrar la columna del Nombre (${JSON.stringify(keys).substring(0, 50)}...).`);
+          errors.push(`Fila ${i + 2}: No se pudo encontrar la columna del Nombre (Columnas disponibles: ${keys.join(', ')}).`);
           continue;
         }
 
@@ -103,7 +104,23 @@ export default function ImportarCSV() {
            if (typeof row[fechaKey] === 'number') {
                fecha_nac_obj = new Date(Math.round((row[fechaKey] - 25569)*86400*1000));
            } else {
-               fecha_nac_obj = new Date(row[fechaKey]);
+               const dateStr = String(row[fechaKey]).trim();
+               // Si viene como DD/MM/YYYY o D/M/YYYY
+               if (dateStr.includes('/')) {
+                  const parts = dateStr.split('/');
+                  if (parts.length === 3) {
+                     const decAno = parseInt(parts[2], 10);
+                     const mes = parseInt(parts[1], 10) - 1;
+                     const dia = parseInt(parts[0], 10);
+                     // asume año 2000+ si viene 2 dígitos
+                     const ano = decAno < 100 ? 2000 + decAno : decAno; 
+                     fecha_nac_obj = new Date(ano, mes, dia);
+                  } else {
+                     fecha_nac_obj = new Date(dateStr);
+                  }
+               } else {
+                 fecha_nac_obj = new Date(dateStr);
+               }
            }
         }
         
@@ -133,6 +150,7 @@ export default function ImportarCSV() {
             domicilio: domKey ? String(row[domKey]).trim() : '',
             celular_contacto: celKey ? String(row[celKey]).trim() : '',
             grupo_sanguineo: sangreKey ? String(row[sangreKey]).trim() : '',
+            condicion: condicionKey ? String(row[condicionKey]).trim() : '',
 
             // Links Docs Drive
             doc_dni_frente: dniFrenteKey ? String(row[dniFrenteKey]).trim() : '',

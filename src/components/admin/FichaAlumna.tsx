@@ -334,19 +334,17 @@ export default function FichaAlumna() {
               <tr className="text-[10px] uppercase text-slate-400 tracking-wider bg-white">
                 <th className="py-3 px-6 font-black border-b border-slate-100">Tipo</th>
                 <th className="py-3 px-6 font-black border-b border-slate-100">Detalle</th>
-                <th className="py-3 px-6 font-black border-b border-slate-100">Monto</th>
                 <th className="py-3 px-6 font-black border-b border-slate-100">Estado</th>
                 <th className="py-3 px-6 font-black border-b border-slate-100">Fecha de Pago</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagosInfo.length === 0 ? (
-                <tr><td colSpan={5} className="py-8 text-center text-xs font-bold uppercase text-slate-500">No hay pagos registrados.</td></tr>
+                <tr><td colSpan={4} className="py-8 text-center text-xs font-bold uppercase text-slate-500">No hay pagos registrados.</td></tr>
               ) : pagosInfo.map(p => (
                 <tr key={p._id} className="hover:bg-slate-50">
                   <td className="py-3 px-6 text-xs font-bold text-slate-600 uppercase">{p.tipo}</td>
                   <td className="py-3 px-6 text-xs text-slate-500">{p.detalle}</td>
-                  <td className="py-3 px-6 text-sm font-black text-purple-700">${p.monto}</td>
                   <td className="py-3 px-6">
                     <span className={`inline-flex px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${
                       p.estado === 'pagado' ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-amber-100 border-amber-200 text-amber-700'

@@ -16,39 +16,39 @@ export default function AdminDashboard() {
   });
 
   const [alumnasVencidas, setAlumnasVencidas] = useState<any[]>([]);
+  const [cuotasVencidasList, setCuotasVencidasList] = useState<any[]>([]);
 
   const [isSending, setIsSending] = useState(false);
+  const [isSendingPayments, setIsSendingPayments] = useState(false);
 
   useEffect(() => {
     async function loadStats() {
-      // In a real app we might fetch selectively or use aggregations.
-      // Doing basic fetching for prototype logic.
-      
       const alumnasSnap = await getDocs(collection(db, 'alumnas'));
+      const alumnasDict: Record<string, any> = {};
+      
       let activas = 0;
       let pendientes = 0;
       let aptosXVencer = 0;
       const today = new Date();
-      // Logic for changing year: valid for 365 days
       const in30Days = addDays(today, 30);
       
       const vencidas: any[] = [];
 
       alumnasSnap.forEach(doc => {
         const data = doc.data();
+        alumnasDict[doc.id] = { id: doc.id, ...data };
+        
         if (data.estado === 'activa') activas++;
         if (data.estado === 'pendiente_aprobacion') pendientes++;
         
         if (data.estado === 'activa' && data.fecha_apto_medico) {
           const aptoDate = data.fecha_apto_medico.toDate();
-          // Certificados valen 1 año (365 días)
           const fechaVencimiento = addDays(aptoDate, 365); 
           if (isBefore(fechaVencimiento, in30Days)) {
             aptosXVencer++;
             vencidas.push({ id: doc.id, ...data, aptoDate, fechaVencimiento });
           }
         } else if (data.estado === 'activa' && !data.fecha_apto_medico) {
-           // Also consider missing ones as expired/needed.
            aptosXVencer++;
            vencidas.push({ id: doc.id, ...data, aptoDate: null, fechaVencimiento: null });
         }
@@ -60,24 +60,49 @@ export default function AdminDashboard() {
          return a.fechaVencimiento.getTime() - b.fechaVencimiento.getTime();
       }));
 
-      const cuotasSnap = await getDocs(query(
+      const allCuotasSnap = await getDocs(query(
         collection(db, 'cuotas'),
-        where('mes', '==', today.getMonth() + 1),
         where('anio', '==', today.getFullYear())
       ));
 
       let pagadasCount = 0;
       let pendientesCount = 0;
       let pendientesAmt = 0;
+      
+      const currentMonth = today.getMonth() + 1;
+      const pendingCuotasEmails: any[] = [];
 
-      cuotasSnap.forEach(doc => {
+      allCuotasSnap.forEach(doc => {
         const data = doc.data();
-        if (data.estado === 'pagado') pagadasCount++;
-        if (data.estado === 'pendiente' || data.estado === 'vencido') {
-          pendientesCount++;
-          pendientesAmt += data.monto;
+        // Stats only for current month
+        if (data.mes === currentMonth) {
+            if (data.estado === 'pagado') pagadasCount++;
+            if (data.estado === 'pendiente' || data.estado === 'vencido') {
+              pendientesCount++;
+              pendientesAmt += data.monto;
+            }
+        }
+        
+        // Late payments check (month >= 5). If today is > 15th, current month is also late.
+        // If today <= 15th, only previous months are late.
+        if (data.mes >= 5 && data.estado !== 'pagado') {
+           const isLate = data.mes < currentMonth || (data.mes === currentMonth && today.getDate() > 15);
+           if (isLate) {
+               const alumnaInfo = alumnasDict[data.alumna_id];
+               if (alumnaInfo && alumnaInfo.email_contacto) {
+                   pendingCuotasEmails.push({
+                       id: doc.id,
+                       alumnaName: alumnaInfo.nombre_completo,
+                       email: alumnaInfo.email_contacto,
+                       mes: data.mes,
+                       monto: data.monto
+                   });
+               }
+           }
         }
       });
+      
+      setCuotasVencidasList(pendingCuotasEmails);
 
       setStats({
         totalActivas: activas,
@@ -198,6 +223,7 @@ export default function AdminDashboard() {
                  </button>
               </div>
             </div>
+            {/* Same table as before */}
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -243,6 +269,72 @@ export default function AdminDashboard() {
               </table>
             </div>
           </div>
+      )}
+
+      {cuotasVencidasList.length > 0 && (
+         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-8">
+            <div className="p-5 border-b border-slate-100 flex items-center bg-red-50/50">
+               <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
+               <h3 className="font-bold text-sm uppercase tracking-tight text-slate-800">Alertas: Cuotas Vencidas (Post día 15)</h3>
+               <div className="ml-auto">
+                 <button 
+                    onClick={async () => {
+                       if (!window.confirm(`¿Estás seguro de enviar notificaciones automáticas por email de cuotas vencidas a ${cuotasVencidasList.length} padres?`)) return;
+                       setIsSendingPayments(true);
+                       try {
+                           const res = await fetch('/api/send-payment-reminders', {
+                               method: 'POST',
+                               headers: { 'Content-Type': 'application/json' },
+                               body: JSON.stringify({ recipients: cuotasVencidasList.map(c => ({ email: c.email, nombre: c.alumnaName })) })
+                           });
+                           const data = await res.json();
+                           if (!res.ok) throw new Error(data.error);
+                           alert(data.message);
+                       } catch (e: any) {
+                           alert('Error: ' + e.message);
+                       } finally {
+                           setIsSendingPayments(false);
+                       }
+                    }}
+                    disabled={isSendingPayments}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs font-bold uppercase tracking-widest transition-colors shadow-sm"
+                 >
+                    <DollarSign className="w-4 h-4" />
+                    {isSendingPayments ? 'Procesando...' : 'Notificar Deudas por Email'}
+                 </button>
+               </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-[10px] uppercase tracking-widest text-slate-500">
+                    <th className="p-4 font-bold">Gimnasta</th>
+                    <th className="p-4 font-bold">Mes Adeudado</th>
+                    <th className="p-4 font-bold">Monto Base</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {cuotasVencidasList.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4">
+                        <p className="font-bold text-slate-800 uppercase text-xs">{c.alumnaName}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">{c.email}</p>
+                      </td>
+                      <td className="p-4">
+                        <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-red-100 text-red-700">
+                           Mes {c.mes}
+                        </span>
+                      </td>
+                      <td className="p-4 font-bold text-slate-700">
+                        ${c.monto}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+         </div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[150px] flex items-center justify-center p-8">

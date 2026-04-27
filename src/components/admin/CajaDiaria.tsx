@@ -16,6 +16,7 @@ export default function CajaDiaria() {
   const [otrosCostos, setOtrosCostos] = useState<any[]>([]);
   const [ventasMerch, setVentasMerch] = useState<any[]>([]);
   const [egresos, setEgresos] = useState<any[]>([]);
+  const [retiros, setRetiros] = useState<any[]>([]);
   const [comienzoCaja, setComienzoCaja] = useState<number>(0);
 
   // Lists for Quick POS
@@ -35,6 +36,8 @@ export default function CajaDiaria() {
   // Forms
   const [showEgreso, setShowEgreso] = useState(false);
   const [egresoForm, setEgresoForm] = useState({ concepto: '', monto: '', metodo: 'efectivo' });
+  const [showRetiro, setShowRetiro] = useState(false);
+  const [retiroForm, setRetiroForm] = useState({ concepto: 'Retiro de caja', monto: '' });
   const [cajaFormOpen, setCajaFormOpen] = useState(false);
   const [nuevoComienzo, setNuevoComienzo] = useState('');
 
@@ -73,11 +76,13 @@ export default function CajaDiaria() {
         .filter(v => v.fecha && v.fecha.toDate() >= startOfMonth && v.fecha.toDate() <= endOfMonth);
       setVentasMerch(ventasList);
 
-      // 5. Fetch Egresos
+      // 5. Fetch Egresos and Retiros
       const egresosSnap = await getDocs(collection(db, 'egresos'));
       const egresosList = egresosSnap.docs.map(d => ({id: d.id, ...d.data()}))
         .filter(e => e.fecha && e.fecha.toDate() >= startOfMonth && e.fecha.toDate() <= endOfMonth);
-      setEgresos(egresosList);
+      
+      setEgresos(egresosList.filter(e => e.tipo !== 'retiro'));
+      setRetiros(egresosList.filter(e => e.tipo === 'retiro'));
 
       // 6. Config Data
       const alSnap = await getDocs(collection(db, 'alumnas'));
@@ -183,6 +188,7 @@ export default function CajaDiaria() {
         concepto: egresoForm.concepto,
         monto: Number(egresoForm.monto),
         metodo: egresoForm.metodo,
+        tipo: 'gasto',
         fecha: currentDate // Guardamos el egreso en el día seleccionado, no el serverTimestamp literal
       });
       setShowEgreso(false);
@@ -192,6 +198,23 @@ export default function CajaDiaria() {
       console.error(err);
       alert('Error al guardar egreso');
     }
+  };
+
+  const handleSaveRetiro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const ref = doc(collection(db, 'egresos'));
+      await setDoc(ref, {
+        concepto: retiroForm.concepto,
+        monto: Number(retiroForm.monto),
+        metodo: 'efectivo',
+        tipo: 'retiro',
+        fecha: currentDate
+      });
+      setShowRetiro(false);
+      setRetiroForm({ concepto: 'Retiro de caja', monto: '' });
+      loadData();
+    } catch (err) { console.error(err); alert('Error al guardar retiro'); }
   };
 
   const handleUpdateCaja = async (e: React.FormEvent) => {
@@ -217,10 +240,11 @@ export default function CajaDiaria() {
   // --- CALCS (DIARIOS) ---
   const isSameDay = (d: Date) => d >= startOfDay && d <= endOfDay;
 
-  const cuotasHoy = cuotas.filter(c => isSameDay(c.fecha_pago?.toDate()));
-  const otrosHoy = otrosCostos.filter(c => isSameDay(c.fecha?.toDate()));
-  const merchHoy = ventasMerch.filter(v => isSameDay(v.fecha?.toDate()));
-  const egresosHoy = egresos.filter(e => isSameDay(e.fecha.toDate()));
+  const cuotasHoy = cuotas.filter(c => c.fecha_pago && isSameDay(c.fecha_pago.toDate()));
+  const otrosHoy = otrosCostos.filter(c => c.fecha && isSameDay(c.fecha.toDate()));
+  const merchHoy = ventasMerch.filter(v => v.fecha && isSameDay(v.fecha.toDate()));
+  const egresosHoy = egresos.filter(e => e.fecha && isSameDay(e.fecha.toDate()));
+  const retirosHoy = retiros.filter(e => e.fecha && isSameDay(e.fecha.toDate()));
 
   // Efectivo Hoy
   const ingCuotasEfvoHoy = cuotasHoy.filter(c => (c.metodo_pago || c.metodo) === 'efectivo').reduce((acc, c) => acc + c.monto, 0);
@@ -228,28 +252,62 @@ export default function CajaDiaria() {
   const ingMerchEfvoHoy = merchHoy.filter(c => (c.metodo_pago || c.metodo) === 'efectivo').reduce((acc, c) => acc + c.monto, 0);
   const totalIngEfvoHoy = ingCuotasEfvoHoy + ingOtrosEfvoHoy + ingMerchEfvoHoy;
   
-  // Transf/MP Hoy
-  const ingCuotasTransfHoy = cuotasHoy.filter(c => (c.metodo_pago || c.metodo) !== 'efectivo').reduce((acc, c) => acc + c.monto, 0);
-  const ingOtrosTransfHoy = otrosHoy.filter(c => {
-     const met = (c.metodo_pago || c.metodo || '');
-     return met === 'transferencia' || met === 'mp' || (!['efectivo'].includes(met) && met !== '');
-  }).reduce((acc, c) => acc + c.monto, 0);
-  const ingMerchTransfHoy = merchHoy.filter(c => (c.metodo_pago || c.metodo) !== 'efectivo').reduce((acc, c) => acc + c.monto, 0);
+  // Transf Hoy
+  const ingCuotasTransfHoy = cuotasHoy.filter(c => (c.metodo_pago || c.metodo) === 'transferencia' || (c.metodo_pago || c.metodo) === 'mp').reduce((acc, c) => acc + c.monto, 0);
+  const ingOtrosTransfHoy = otrosHoy.filter(c => (c.metodo_pago || c.metodo) === 'transferencia' || (c.metodo_pago || c.metodo) === 'mp').reduce((acc, c) => acc + c.monto, 0);
+  const ingMerchTransfHoy = merchHoy.filter(c => (c.metodo_pago || c.metodo) === 'transferencia' || (c.metodo_pago || c.metodo) === 'mp').reduce((acc, c) => acc + c.monto, 0);
   const totalIngTransfHoy = ingCuotasTransfHoy + ingOtrosTransfHoy + ingMerchTransfHoy;
+  
+  // Debito Hoy
+  const ingCuotasDebitoHoy = cuotasHoy.filter(c => (c.metodo_pago || c.metodo) === 'debito').reduce((acc, c) => acc + c.monto, 0);
+  const ingOtrosDebitoHoy = otrosHoy.filter(c => (c.metodo_pago || c.metodo) === 'debito').reduce((acc, c) => acc + c.monto, 0);
+  const ingMerchDebitoHoy = merchHoy.filter(c => (c.metodo_pago || c.metodo) === 'debito').reduce((acc, c) => acc + c.monto, 0);
+  const totalIngDebitoHoy = ingCuotasDebitoHoy + ingOtrosDebitoHoy + ingMerchDebitoHoy;
 
   const totalEgresosHoy = egresosHoy.reduce((acc, e) => acc + e.monto, 0);
+  const totalRetirosHoy = retirosHoy.reduce((acc, e) => acc + e.monto, 0);
   
   // Caja Final
-  const cajaFinalEfvo = comienzoCaja + totalIngEfvoHoy - egresosHoy.filter(e => e.metodo === 'efectivo').reduce((a, b) => a + b.monto, 0);
+  const cajaFinalEfvo = comienzoCaja + totalIngEfvoHoy - egresosHoy.filter(e => e.metodo === 'efectivo').reduce((a, b) => a + b.monto, 0) - totalRetirosHoy;
 
   // --- CALCS (MENSUALES) ---
   const totCuotasEfvoMes = cuotas.filter(c => c.metodo_pago === 'efectivo').reduce((acc, c) => acc + c.monto, 0);
   const totOtrosEfvoMes = otrosCostos.filter(c => c.metodo_pago === 'efectivo' || !c.metodo_pago).reduce((acc, c) => acc + c.monto, 0) + ventasMerch.filter(v=>v.metodo_pago==='efectivo').reduce((acc,v)=>acc+v.monto,0);
-  const totCuotasTransfMes = cuotas.filter(c => c.metodo_pago !== 'efectivo').reduce((acc, c) => acc + c.monto, 0);
-  const totOtrosTransfMes = otrosCostos.filter(c => c.metodo_pago === 'transferencia' || c.metodo_pago === 'mp').reduce((acc, c) => acc + c.monto, 0) + ventasMerch.filter(v=>v.metodo_pago!=='efectivo').reduce((acc,v)=>acc+v.monto,0);
+  const totCuotasTransfMes = cuotas.filter(c => c.metodo_pago !== 'efectivo' && c.metodo_pago !== 'debito').reduce((acc, c) => acc + c.monto, 0);
+  const totOtrosTransfMes = otrosCostos.filter(c => c.metodo_pago === 'transferencia' || c.metodo_pago === 'mp').reduce((acc, c) => acc + c.monto, 0) + ventasMerch.filter(v=>v.metodo_pago==='transferencia' || v.metodo_pago==='mp').reduce((acc,v)=>acc+v.monto,0);
   const totEgresosMes = egresos.reduce((acc, e) => acc + e.monto, 0);
+  const totRetirosMes = retiros.reduce((acc, r) => acc + r.monto, 0);
   
   const formatter = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+  const handleExportExcel = () => {
+    let csvContent = "\uFEFF"; // BOM for UTF-8
+    csvContent += "FECHA,TIPO,DETALLE,METODO_PAGO,MONTO\n";
+    
+    const allRecords: any[] = [];
+    cuotas.forEach(c => allRecords.push({ fecha: c.fecha_pago?.toDate(), tipo: 'CUOTA', detalle: 'Cuota Alumna', metodo: c.metodo_pago, monto: c.monto }));
+    otrosCostos.forEach(c => allRecords.push({ fecha: c.fecha?.toDate(), tipo: 'OTRO', detalle: c.concepto, metodo: c.metodo_pago || c.metodo, monto: c.monto }));
+    ventasMerch.forEach(v => allRecords.push({ fecha: v.fecha?.toDate(), tipo: 'KIOSKO/MERCH', detalle: v.nombre_producto || v.concepto, metodo: v.metodo_pago, monto: v.monto }));
+    egresos.forEach(e => allRecords.push({ fecha: e.fecha?.toDate(), tipo: 'EGRESO', detalle: e.concepto, metodo: e.metodo, monto: -e.monto }));
+    retiros.forEach(r => allRecords.push({ fecha: r.fecha?.toDate(), tipo: 'RETIRO_CAJA', detalle: r.concepto, metodo: r.metodo, monto: -r.monto }));
+    
+    allRecords.sort((a,b) => (a.fecha?.getTime() || 0) - (b.fecha?.getTime() || 0));
+
+    allRecords.forEach(r => {
+       const dateStr = r.fecha ? r.fecha.toLocaleDateString('es-AR') : 'N/A';
+       const safeDetalle = String(r.detalle).replace(/"/g, '""');
+       csvContent += `"${dateStr}","${r.tipo}","${safeDetalle}","${String(r.metodo).toUpperCase()}","${r.monto}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Caja_${currentMonthDate.getFullYear()}_${currentMonthDate.getMonth()+1}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-6">
@@ -266,15 +324,18 @@ export default function CajaDiaria() {
           <button onClick={() => changeDay(1)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><ChevronRight className="w-4 h-4" /></button>
         </div>
         
-        <div className="flex gap-3">
-          <Link to="/admin/caja/importar" className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-emerald-100 flex items-center gap-2 border border-emerald-200">
-             <Upload className="w-3 h-3" /> Importar Histórico
-          </Link>
-          <button onClick={() => { setNuevoComienzo(comienzoCaja.toString()); setCajaFormOpen(true); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-slate-200 flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button onClick={handleExportExcel} className="bg-slate-100 text-slate-600 px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-slate-200 flex items-center gap-2">
+            Exportar Excel
+          </button>
+          <button onClick={() => { setNuevoComienzo(comienzoCaja.toString()); setCajaFormOpen(true); }} className="bg-slate-100 text-slate-600 px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-slate-200 flex items-center gap-2">
             <Calculator className="w-3 h-3" /> Modificar Comienzo Caja
           </button>
-          <button onClick={() => setShowEgreso(true)} className="bg-red-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-red-600 flex items-center gap-2">
+          <button onClick={() => setShowEgreso(true)} className="bg-red-500 text-white px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-red-600 flex items-center gap-2">
             <Plus className="w-3 h-3" /> Añadir Egreso
+          </button>
+          <button onClick={() => setShowRetiro(true)} className="bg-amber-500 text-white px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wide hover:bg-amber-600 flex items-center gap-2">
+            <Minus className="w-3 h-3" /> Retirar de Caja
           </button>
         </div>
       </div>
@@ -333,8 +394,9 @@ export default function CajaDiaria() {
                    <div>
                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Método</label>
                      <select required value={cuotaForm.metodo_pago} onChange={e=>setCuotaForm({...cuotaForm, metodo_pago: e.target.value})} className="w-full text-xs font-bold p-2.5 rounded border border-purple-200 outline-none focus:border-purple-500 uppercase bg-white">
-                        <option value="efectivo">EFVO</option>
-                        <option value="transferencia">MP/Transf</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="debito">Débito</option>
+                        <option value="transferencia">Transferencia/MP</option>
                      </select>
                    </div>
                    <div>
@@ -368,8 +430,9 @@ export default function CajaDiaria() {
                    <div>
                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Método</label>
                      <select required value={merchForm.metodo_pago} onChange={e=>setMerchForm({...merchForm, metodo_pago: e.target.value})} className="w-full text-xs font-bold p-2.5 rounded border border-purple-200 outline-none focus:border-purple-500 uppercase bg-white">
-                        <option value="efectivo">EFVO</option>
-                        <option value="transferencia">MP/Transf</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="debito">Débito</option>
+                        <option value="transferencia">Transferencia/MP</option>
                      </select>
                    </div>
                    <div>
@@ -404,6 +467,14 @@ export default function CajaDiaria() {
                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monto ($)</label>
                      <input type="number" required value={otroForm.monto} onChange={e=>setOtroForm({...otroForm, monto: e.target.value})} className="w-full text-xs font-bold p-2.5 rounded border border-purple-200 outline-none focus:border-purple-500 uppercase bg-white" />
                    </div>
+                    <div>
+                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Método</label>
+                     <select required value={otroForm.metodo_pago} onChange={e=>setOtroForm({...otroForm, metodo_pago: e.target.value})} className="w-full text-xs font-bold p-2.5 rounded border border-purple-200 outline-none focus:border-purple-500 uppercase bg-white">
+                        <option value="efectivo">Efectivo</option>
+                        <option value="debito">Débito</option>
+                        <option value="transferencia">Transferencia/MP</option>
+                     </select>
+                   </div>
                    <div>
                      <button type="submit" disabled={isProcessing || !otroForm.alumna_id} className="w-full bg-blue-600 text-white rounded p-2.5 font-bold text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-colors disabled:opacity-50">
                         Cargar
@@ -413,24 +484,32 @@ export default function CajaDiaria() {
                )}
             </div>
           </div>
-
+          
           {/* TABLERO DIARIO */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Comienzo Caja Hoy</span>
+                <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest leading-tight">Comienzo Caja Hoy</span>
                 <span className="text-xl font-black text-slate-700">{formatter.format(comienzoCaja)}</span>
              </div>
              <div className="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-100 flex flex-col justify-between">
-                <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-widest">Ingresos Efectivo (Hoy)</span>
+                <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-widest leading-tight">Ingresos Efectivo (Hoy)</span>
                 <span className="text-xl font-black text-emerald-700">{formatter.format(totalIngEfvoHoy)}</span>
              </div>
              <div className="bg-blue-50 p-4 rounded-xl shadow-sm border border-blue-100 flex flex-col justify-between">
-                <span className="text-[10px] uppercase font-bold text-blue-600 tracking-widest">Ingresos TC/Transferencia (Hoy)</span>
-                <span className="text-xl font-black text-blue-700">{formatter.format(totalIngTransfHoy)}</span>
+                <span className="text-[9px] uppercase font-bold text-blue-600 tracking-widest leading-tight">Ingresos Débito (Hoy)</span>
+                <span className="text-xl font-black text-blue-700">{formatter.format(totalIngDebitoHoy)}</span>
+             </div>
+             <div className="bg-indigo-50 p-4 rounded-xl shadow-sm border border-indigo-100 flex flex-col justify-between">
+                <span className="text-[9px] uppercase font-bold text-indigo-600 tracking-widest leading-tight">Ingresos Transf. (Hoy)</span>
+                <span className="text-xl font-black text-indigo-700">{formatter.format(totalIngTransfHoy)}</span>
              </div>
              <div className="bg-red-50 p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between">
-                <span className="text-[10px] uppercase font-bold text-red-600 tracking-widest">Egresos (Hoy)</span>
+                <span className="text-[9px] uppercase font-bold text-red-600 tracking-widest leading-tight">Egresos (Hoy)</span>
                 <span className="text-xl font-black text-red-700">{formatter.format(totalEgresosHoy)}</span>
+             </div>
+             <div className="bg-amber-50 p-4 rounded-xl shadow-sm border border-amber-100 flex flex-col justify-between">
+                <span className="text-[9px] uppercase font-bold text-amber-600 tracking-widest leading-tight">Se Sacó de Caja (Hoy)</span>
+                <span className="text-xl font-black text-amber-700">{formatter.format(totalRetirosHoy)}</span>
              </div>
           </div>
           
@@ -493,7 +572,7 @@ export default function CajaDiaria() {
                    <tbody className="divide-y divide-slate-100">
                      {egresosHoy.map(e => (
                         <tr key={e.id}>
-                          <td className="p-3 text-[10px] font-bold text-slate-600 uppercase">{e.concepto}</td>
+                          <td className="p-3 text-[10px] font-bold text-slate-600 uppercase">Gasto: {e.concepto}</td>
                           <td className="p-3 text-[10px] font-bold uppercase text-slate-400">{e.metodo}</td>
                           <td className="p-3 text-xs font-black text-red-600 text-right">{formatter.format(e.monto)}</td>
                           <td className="p-3 text-right">
@@ -501,7 +580,17 @@ export default function CajaDiaria() {
                           </td>
                         </tr>
                      ))}
-                     {egresosHoy.length === 0 && (
+                     {retirosHoy.map(e => (
+                        <tr key={e.id} className="bg-amber-50/30">
+                          <td className="p-3 text-[10px] font-bold text-amber-700 uppercase">Retiro: {e.concepto}</td>
+                          <td className="p-3 text-[10px] font-bold uppercase text-amber-500">{e.metodo}</td>
+                          <td className="p-3 text-xs font-black text-amber-600 text-right">{formatter.format(e.monto)}</td>
+                          <td className="p-3 text-right">
+                             <button onClick={()=>deleteEgreso(e.id)} className="text-amber-300 hover:text-amber-600"><Trash2 className="w-3 h-3" /></button>
+                          </td>
+                        </tr>
+                     ))}
+                     {egresosHoy.length === 0 && retirosHoy.length === 0 && (
                        <tr><td colSpan={4} className="p-6 text-center text-[10px] font-bold uppercase text-slate-400">Sin egresos hoy</td></tr>
                      )}
                    </tbody>
@@ -577,6 +666,29 @@ export default function CajaDiaria() {
                <div className="flex gap-2 justify-end mt-2 pt-2">
                   <button type="button" onClick={()=>setShowEgreso(false)} className="px-4 py-2 bg-slate-100 rounded text-[10px] uppercase font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
                   <button type="submit" className="px-4 py-2 bg-red-500 rounded text-[10px] uppercase font-bold text-white hover:bg-red-600">Guardar</button>
+               </div>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RETIRO */}
+      {showRetiro && (
+        <div className="fixed inset-0 bg-slate-900/50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 border border-slate-200">
+             <h2 className="text-sm font-bold uppercase mb-4 text-amber-600">Retiro de Caja (Hoy)</h2>
+             <form onSubmit={handleSaveRetiro} className="space-y-4">
+               <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Concepto</label>
+                  <input type="text" required value={retiroForm.concepto} onChange={e=>setRetiroForm({...retiroForm, concepto: e.target.value})} className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-xs uppercase font-bold outline-none focus:border-amber-500" />
+               </div>
+               <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Monto ($)</label>
+                  <input type="number" required value={retiroForm.monto} onChange={e=>setRetiroForm({...retiroForm, monto: e.target.value})} className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-xs font-bold outline-none focus:border-amber-500" />
+               </div>
+               <div className="flex gap-2 justify-end mt-2 pt-2">
+                  <button type="button" onClick={()=>setShowRetiro(false)} className="px-4 py-2 bg-slate-100 rounded text-[10px] uppercase font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+                  <button type="submit" className="px-4 py-2 bg-amber-500 rounded text-[10px] uppercase font-bold text-white hover:bg-amber-600">Retirar</button>
                </div>
              </form>
           </div>

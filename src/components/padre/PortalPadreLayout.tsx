@@ -59,7 +59,11 @@ export default function PortalPadreLayout() {
           </div>
           
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-             <h1 className="text-sm font-black uppercase tracking-widest text-slate-800">
+             <img src="/logo.png" alt="Akros Logo" className="h-10 object-contain" onError={(e) => {
+               (e.target as HTMLImageElement).style.display = 'none';
+               document.getElementById('header-logo-text-padre')?.classList.remove('hidden');
+             }} />
+             <h1 id="header-logo-text-padre" className="text-sm font-black uppercase tracking-widest text-slate-800 hidden">
                <span className="text-purple-600">Akros</span> Gimnasia Artística
              </h1>
           </div>

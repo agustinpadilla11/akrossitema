@@ -9,6 +9,48 @@ async function startServer() {
 
   app.use(express.json());
 
+  app.post("/api/send-payment-reminders", async (req, res) => {
+    try {
+      const { recipients, monthName } = req.body;
+      const resendKey = process.env.RESEND_API_KEY;
+
+      if (!resendKey) {
+        return res.status(500).json({ error: "No se configuró la clave de API (RESEND_API_KEY) en el servidor." });
+      }
+
+      if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+        return res.status(400).json({ error: "No se enviaron destinatarios." });
+      }
+
+      const resend = new Resend(resendKey);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const recipient of recipients) {
+        if (!recipient.email) continue;
+        
+        try {
+          await resend.emails.send({
+            from: 'Akros Avisos <onboarding@resend.dev>', // Use verified domain in production
+            to: recipient.email,
+            subject: `Aviso de Cuota Vencida - Mes ${monthName || 'Actual'}`,
+            text: `Señor papá/mamá/tutor de ${recipient.nombre},\n\nUd. no ha pagado la cuota del correspondiente mes en tiempo y forma, por endo se le habrá un incremento en la misma.\n\nAtte.\nGimnasio Akros`,
+          });
+          successCount++;
+        } catch (e) {
+          console.error("Error sending payment reminder to:", recipient.email, e);
+          errorCount++;
+        }
+      }
+
+      res.json({ success: true, message: `Se enviaron ${successCount} recordatorios de pago. ${errorCount} fallaron.` });
+    } catch (error) {
+       console.error("Critical error in /api/send-payment-reminders", error);
+       res.status(500).json({ error: "Ocurrió un error general en el envío." });
+    }
+  });
+
   // API Route to send medical certificate expiration emails via Resend
   app.post("/api/send-reminders", async (req, res) => {
     try {
